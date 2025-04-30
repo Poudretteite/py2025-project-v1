@@ -1,0 +1,6 @@
+{
+  "rotate_every_hours": 24,
+  "max_size_mb": 10,
+  "rotate_after_lines": 100000,
+  "retention_days": 30
+}
