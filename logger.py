@@ -195,31 +195,56 @@ class Logger:
             sensor_id: Optional[str] = None
     ) -> Iterator[Dict]:
         """Odczytuje wpisy z pojedynczego pliku CSV."""
-        with open(filepath, 'r') as f:
-            reader = csv.reader(f)
-            next(reader)  # Pominięcie nagłówka
+        try:
+            with open(filepath, 'r') as f:
+                reader = csv.reader(f)
 
-            for row in reader:
-                if len(row) != 4:
-                    continue
-
+                # Check if file is empty before trying to skip header
                 try:
-                    timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S.%f")
-                    row_sensor_id = row[1]
-                    value = float(row[2])
-                    unit = row[3]
+                    header = next(reader)
+                except StopIteration:
+                    return  # Empty file, return empty generator
 
-                    # Filtrowanie wyników
-                    if start <= timestamp <= end:
-                        if sensor_id is None or row_sensor_id == sensor_id:
-                            yield {
-                                "timestamp": timestamp,
-                                "sensor_id": row_sensor_id,
-                                "value": value,
-                                "unit": unit
-                            }
-                except (ValueError, IndexError):
-                    continue
+                if len(header) != 4:  # Basic validation
+                    return
+
+                for row in reader:
+                    if len(row) != 4:
+                        continue
+
+                    try:
+                        timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S.%f")
+                        row_sensor_id = row[1]
+                        value = float(row[2])
+                        unit = row[3]
+
+                        # Filtrowanie wyników
+                        if start <= timestamp <= end:
+                            if sensor_id is None or row_sensor_id == sensor_id:
+                                yield {
+                                    "timestamp": timestamp,
+                                    "sensor_id": row_sensor_id,
+                                    "value": value,
+                                    "unit": unit
+                                }
+                    except (ValueError, IndexError):
+                        continue
+        except FileNotFoundError:
+            return
+
+    def test_empty_file_handling(self):
+        """Test czy logger poprawnie obsługuje puste pliki."""
+        empty_file = os.path.join(self.temp_dir, "empty.csv")
+        with open(empty_file, 'w') as f:
+            pass
+
+        # Should not raise exceptions
+        logs = list(self.logger._read_log_file(
+            empty_file,
+            start=datetime.now() - timedelta(minutes=1),
+            end=datetime.now()
+        ))
+        self.assertEqual(len(logs), 0)
 
     def _read_zip_file(
             self,
