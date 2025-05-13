@@ -178,7 +178,7 @@ class Logger:
         os.remove(source_path)
 
     def _clean_old_archives(self) -> None:
-        """Usuwa archiwa starsze niż retention_days dni."""
+        """Usuwa archiwa starsze niż [retention_days] dni."""
         archive_dir = os.path.join(self.log_dir, "archive")
         cutoff_time = datetime.now() - timedelta(days=self.retention_days)
 
