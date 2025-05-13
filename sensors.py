@@ -1,5 +1,7 @@
 import random
 import time
+from datetime import datetime
+from typing import Callable, List
 
 class Sensor:
     def __init__(self, sensor_id, name, unit, min_value, max_value, frequency=1):
@@ -22,6 +24,25 @@ class Sensor:
         self.active = True
         self.last_value = None
         self.history = []
+        self._callbacks: List[Callable[[str, datetime, float, str], None]] = []
+
+    def register_callback(self, callback: Callable[[str, datetime, float, str], None]) -> None:
+        """Rejestruje funkcję callback (np. logger.log_reading)."""
+        self._callbacks.append(callback)
+
+    def unregister_callback(self, callback: Callable[[str, datetime, float, str], None]) -> None:
+        """Usuwa callback z listy."""
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+
+    def _notify_callbacks(self, value: float) -> None:
+        """Wywołuje wszystkie zarejestrowane callbacki."""
+        timestamp = datetime.now()
+        for callback in self._callbacks:
+            try:
+                callback(self.sensor_id, timestamp, value, self.unit)
+            except Exception as e:
+                print(f"Błąd callbacka: {e}")
 
     def read_value(self):
         """
@@ -33,6 +54,9 @@ class Sensor:
 
         value = random.uniform(self.min_value, self.max_value)
         self.last_value = value
+        self.history.append(value)
+
+        self._notify_callbacks(value)  # Powiadomienie loggera/obserwatorów
         return value
 
     def calibrate(self, calibration_factor):
@@ -88,6 +112,8 @@ class LightSensor(Sensor):
 
         self.last_value = value
         self.history.append(self.last_value)
+
+        super()._notify_callbacks(value)  # Wywołaj powiadomienia
         return value
 
 class TemperatureSensor(Sensor):
@@ -120,6 +146,8 @@ class TemperatureSensor(Sensor):
 
         self.last_value = value
         self.history.append(self.last_value)
+
+        super()._notify_callbacks(value)  # Wywołaj powiadomienia
         return value
 
 class HumiditySensor(Sensor):
@@ -142,6 +170,8 @@ class HumiditySensor(Sensor):
 
         self.last_value = value
         self.history.append(self.last_value)
+
+        super()._notify_callbacks(value)  # Wywołaj powiadomienia
         return value
 
 class AirQualitySensor(Sensor):
@@ -153,6 +183,8 @@ class AirQualitySensor(Sensor):
             raise Exception(f"Czujnik {self.name} jest wyłączony.")
         value = random.uniform(self.min_value, self.max_value)
         self.last_value = value
+
+        super()._notify_callbacks(value)  # Wywołaj powiadomienia
         return value
 
 if __name__ == "__main__":
