@@ -113,7 +113,7 @@ class LightSensor(Sensor):
         self.last_value = value
         self.history.append(self.last_value)
 
-        super()._notify_callbacks(value)  # Wywołaj powiadomienia
+        super()._notify_callbacks(value)
         return value
 
 class TemperatureSensor(Sensor):
@@ -147,7 +147,7 @@ class TemperatureSensor(Sensor):
         self.last_value = value
         self.history.append(self.last_value)
 
-        super()._notify_callbacks(value)  # Wywołaj powiadomienia
+        super()._notify_callbacks(value)
         return value
 
 class HumiditySensor(Sensor):
@@ -171,7 +171,7 @@ class HumiditySensor(Sensor):
         self.last_value = value
         self.history.append(self.last_value)
 
-        super()._notify_callbacks(value)  # Wywołaj powiadomienia
+        super()._notify_callbacks(value)
         return value
 
 class AirQualitySensor(Sensor):
@@ -184,7 +184,7 @@ class AirQualitySensor(Sensor):
         value = random.uniform(self.min_value, self.max_value)
         self.last_value = value
 
-        super()._notify_callbacks(value)  # Wywołaj powiadomienia
+        super()._notify_callbacks(value)
         return value
 
 if __name__ == "__main__":
