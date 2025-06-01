@@ -2,7 +2,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import yaml
 from datetime import datetime, timedelta
+from server.server import NetworkServer  # Your existing server class
+from logger import Logger  # Your logging class
 
+# Import or define your sensor classes (simulated sensors)
 from sensors import Sensor, LightSensor, TemperatureSensor, HumiditySensor, AirQualitySensor
 
 CONFIG_FILE = "config.yaml"
@@ -14,6 +17,8 @@ class ServerGUI:
         self.running = False
         self.sensors = []
         self.history = {}
+        self.network_server = None
+        self.logger = Logger("config.json")
 
         self.load_config()
         self.build_gui()
@@ -32,7 +37,7 @@ class ServerGUI:
             yaml.safe_dump(self.config, f)
 
     def build_gui(self):
-        # Górny panel (start/stop, port)
+        # Top panel (start/stop, port)
         top_frame = tk.Frame(self.root)
         top_frame.pack(fill=tk.X, padx=10, pady=5)
 
@@ -45,7 +50,7 @@ class ServerGUI:
         self.stop_button = tk.Button(top_frame, text="Stop", command=self.stop_server, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
 
-        # Środkowa część – tabela czujników
+        # Middle part – sensor table
         columns = ("sensor", "last_value", "unit", "timestamp", "avg_1h", "avg_12h")
         self.tree = ttk.Treeview(self.root, columns=columns, show="headings", height=10)
         for col in columns:
@@ -54,8 +59,8 @@ class ServerGUI:
 
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Dolny panel – status
-        self.status_var = tk.StringVar(value="Serwer zatrzymany")
+        # Bottom panel – status bar
+        self.status_var = tk.StringVar(value="Server stopped")
         status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(fill=tk.X)
 
@@ -64,23 +69,39 @@ class ServerGUI:
             port = int(self.port_var.get())
             self.save_config()
 
+            # Stop existing server if any
+            if self.network_server is not None:
+                self.network_server.stop()
+
+            # Create and start network server with callback
+            self.network_server = NetworkServer(port=port, on_data_received=self.on_data_received)
+            self.network_server.start()
+
             self.running = True
             self.start_button.config(state=tk.DISABLED)
             self.stop_button.config(state=tk.NORMAL)
-            self.status_var.set(f"Serwer nasłuchuje na porcie {port}...")
+            self.status_var.set(f"Server listening on port {port}...")
 
+            # Initialize simulated sensors (optional, can be skipped)
             self.init_sensors()
+
+            # Start GUI update loop
             self.update_loop()
         except Exception as e:
-            messagebox.showerror("Błąd", str(e))
+            messagebox.showerror("Error", str(e))
 
     def stop_server(self):
         self.running = False
+        if self.network_server:
+            self.network_server.stop()
+            self.network_server = None
+
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
-        self.status_var.set("Serwer zatrzymany")
+        self.status_var.set("Server stopped")
 
     def init_sensors(self):
+        # Optional simulated sensors (can comment out if using only network data)
         self.sensors = [
             LightSensor(daytime="night"),
             TemperatureSensor(season="summer"),
@@ -96,11 +117,42 @@ class ServerGUI:
         if sensor_id not in self.history:
             self.history[sensor_id] = []
         self.history[sensor_id].append((timestamp, value))
-        # Ogranicz rozmiar historii do ostatnich 12h
-        self.history[sensor_id] = [
-            (ts, val) for ts, val in self.history[sensor_id]
-            if ts > datetime.now() - timedelta(hours=12)
-        ]
+
+        cutoff = datetime.now() - timedelta(hours=12)
+        self.history[sensor_id] = [(ts, val) for ts, val in self.history[sensor_id] if ts > cutoff]
+
+        self.logger.log_reading(sensor_id, timestamp, value, unit)
+
+    def on_data_received(self, data):
+        # Called from NetworkServer thread — use root.after for thread safety
+        def handle():
+            try:
+                timestamp = datetime.fromisoformat(data["timestamp"])
+                sensor_id = data["sensor_id"]
+                value = float(data["value"])
+                unit = data["unit"]
+
+                # Log the reading
+                self.logger.log_reading(sensor_id, timestamp, value, unit)
+
+                # Update history for averages
+                if sensor_id not in self.history:
+                    self.history[sensor_id] = []
+                self.history[sensor_id].append((timestamp, value))
+                cutoff = datetime.now() - timedelta(hours=12)
+                self.history[sensor_id] = [(ts, val) for ts, val in self.history[sensor_id] if ts > cutoff]
+
+                # Update simulated sensor last value if exists
+                for sensor in self.sensors:
+                    if sensor.sensor_id == sensor_id:
+                        sensor._last_value = value
+
+                self.update_table()
+
+            except Exception as e:
+                print(f"Error processing incoming data: {e}")
+
+        self.root.after(0, handle)
 
     def update_loop(self):
         if not self.running:
@@ -110,7 +162,7 @@ class ServerGUI:
             try:
                 sensor.read_value()
             except Exception as e:
-                self.status_var.set(f"Błąd: {str(e)}")
+                self.status_var.set(f"Error: {str(e)}")
 
         self.update_table()
         self.root.after(3000, self.update_loop)
@@ -126,9 +178,11 @@ class ServerGUI:
         return f"{sum(values)/len(values):.2f}"
 
     def update_table(self):
+        # Clear table
         for row in self.tree.get_children():
             self.tree.delete(row)
 
+        # Insert rows
         for sensor in self.sensors:
             sensor_id = sensor.sensor_id
             value = sensor.get_last_value()
@@ -146,8 +200,15 @@ class ServerGUI:
                 avg_12h
             ))
 
+    def on_closing(self):
+        self.running = False
+        if self.network_server:
+            self.network_server.stop()
+        self.logger.stop()  # Make sure logs are flushed and file closed
+        self.root.destroy()
 
 if __name__ == "__main__":
     root = tk.Tk()
     gui = ServerGUI(root)
+    root.protocol("WM_DELETE_WINDOW", gui.on_closing)  # Proper cleanup on close
     root.mainloop()
